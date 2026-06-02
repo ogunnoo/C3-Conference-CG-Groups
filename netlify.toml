@@ -1,0 +1,33 @@
+# Netlify deploy config for the Connect Groups map.
+# Frontend: Vite build in client/ -> served statically.
+# Backend:  two serverless functions proxying Planning Center + Nominatim.
+#
+# Set these environment variables in the Netlify UI (Site settings ->
+# Environment variables) — they are NOT committed:
+#   PCO_APP_ID, PCO_SECRET
+
+[build]
+  command = "npm --prefix client install && npm --prefix client run build"
+  publish = "client/dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Route the app's /api/* calls to the serverless functions.
+# These specific rules come BEFORE the SPA fallback so they take precedence.
+[[redirects]]
+  from = "/api/groups"
+  to = "/.netlify/functions/groups"
+  status = 200
+
+[[redirects]]
+  from = "/api/geocode"
+  to = "/.netlify/functions/geocode"
+  status = 200
+
+# SPA fallback: everything else serves the built index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
