@@ -48,6 +48,11 @@ body,
   z-index: 1000;
 }
 
+/* Mobile bottom-sheet handle — hidden on desktop. */
+.cg-handle {
+  display: none;
+}
+
 .cg-brand {
   display: flex;
   align-items: center;
@@ -457,4 +462,76 @@ body,
 }
 .cg-apply:active {
   transform: translateY(1px);
+}
+
+/* --- Mobile: sidebar becomes a collapsible bottom sheet --- */
+@media (max-width: 768px) {
+  .cg-app {
+    display: block;
+    position: relative;
+    height: 100dvh;
+  }
+
+  /* Map fills the whole screen underneath the sheet. */
+  .cg-map-wrap {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Sidebar docks to the bottom and slides up. Collapsed by default so the
+     map is fully visible; only the handle peeks above the bottom edge. */
+  .cg-sidebar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 82vh;
+    max-height: 82dvh;
+    border-right: none;
+    border-top: 1px solid var(--line);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
+    transform: translateY(calc(100% - 60px));
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .cg-sidebar.open {
+    transform: translateY(0);
+  }
+
+  /* The grab bar / toggle that stays visible when collapsed. */
+  .cg-handle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    height: 60px;
+    padding: 9px 0 0;
+    border: none;
+    background: transparent;
+    color: var(--cream);
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .cg-grabber {
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--cream-40);
+  }
+  .cg-handle-label {
+    color: var(--lime);
+    letter-spacing: 0.02em;
+  }
+
+  /* Brand wordmark is redundant on the small sheet. */
+  .cg-brand {
+    display: none;
+  }
 }

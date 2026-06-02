@@ -65,6 +65,27 @@ function FitToPoints({ points, suppressed }) {
   return null;
 }
 
+// Keeps the Leaflet canvas in sync with its container. When the viewport
+// changes (e.g. desktop ↔ mobile layout switch), Leaflet doesn't always
+// re-measure, leaving the map rendered at a stale width. Observe both the
+// window and the container and invalidate on any change.
+function ResizeHandler() {
+  const map = useMap();
+  useEffect(() => {
+    const invalidate = () => map.invalidateSize();
+    window.addEventListener("resize", invalidate);
+    window.addEventListener("orientationchange", invalidate);
+    const ro = new ResizeObserver(invalidate);
+    ro.observe(map.getContainer());
+    return () => {
+      window.removeEventListener("resize", invalidate);
+      window.removeEventListener("orientationchange", invalidate);
+      ro.disconnect();
+    };
+  }, [map]);
+  return null;
+}
+
 // Flies to a selected group and opens its popup once movement settles.
 function FlyToSelected({ selected, markerRefs }) {
   const map = useMap();
@@ -115,6 +136,7 @@ export default function App() {
   const [address, setAddress] = useState("");
   const [origin, setOrigin] = useState(null); // { lat, lng, label }
   const [geoStatus, setGeoStatus] = useState("idle"); // idle | loading | error
+  const [sheetOpen, setSheetOpen] = useState(false); // mobile bottom-sheet state
 
   const markerRefs = useRef({});
 
@@ -233,7 +255,21 @@ export default function App() {
 
   return (
     <div className="cg-app">
-      <aside className="cg-sidebar">
+      <aside className={`cg-sidebar ${sheetOpen ? "open" : ""}`}>
+        <button
+          type="button"
+          className="cg-handle"
+          onClick={() => setSheetOpen((o) => !o)}
+          aria-expanded={sheetOpen}
+        >
+          <span className="cg-grabber" />
+          <span className="cg-handle-label">
+            {sheetOpen
+              ? "Hide list"
+              : `Browse ${status === "ready" ? ordered.length : ""} groups`}
+          </span>
+        </button>
+
         <div className="cg-brand">
           <span className="cg-dot" />
           Connect Groups
@@ -321,7 +357,10 @@ export default function App() {
             <button
               key={g.id}
               className={`cg-item ${selected?.id === g.id ? "active" : ""}`}
-              onClick={() => setSelected({ ...g })}
+              onClick={() => {
+                setSelected({ ...g });
+                setSheetOpen(false);
+              }}
             >
               <div className="cg-item-title">{g.name}</div>
               <div className="cg-item-meta">
@@ -342,6 +381,7 @@ export default function App() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           />
+          <ResizeHandler />
           <FitToPoints points={fitPoints} suppressed={!!selected} />
           <FlyToSelected selected={selected} markerRefs={markerRefs} />
           {origin && (
