@@ -21,19 +21,79 @@ function parseDay(schedule = "") {
   return DAYS.find((d) => s.includes(d.toLowerCase())) || null;
 }
 
+// PCO tag-group names -> the labels we want to show in the UI.
+const CATEGORY_LABELS = {
+  Location: "Campus",
+  Demographics: "Demographics",
+  "Group Attributes": "Attributes",
+  "Group Type": "Type",
+  Regularity: "Frequency",
+  Season: "Season",
+};
+
+// Make an authenticated PCO fetcher bound to one set of credentials.
+function makePcoFetch(appId, secret) {
+  const authHeader =
+    "Basic " + Buffer.from(`${appId}:${secret}`).toString("base64");
+  return async (url) => {
+    const res = await fetch(url, { headers: { Authorization: authHeader } });
+    if (!res.ok) throw new Error(`PCO ${res.status}: ${await res.text()}`);
+    return res.json();
+  };
+}
+
+// Build a map of group id -> [{ name, category }] by walking every tag group's
+// tags and asking each tag which groups carry it. PCO doesn't let us include
+// tags on the groups listing, so this is the practical path. Requests fan out
+// in parallel and the whole result is cached upstream for 5 minutes.
+async function fetchTagsByGroup(pcoFetch, validIds) {
+  const tagGroupsJson = await pcoFetch(`${PCO_BASE}/tag_groups?per_page=100`);
+  const tagGroups = (tagGroupsJson.data || []).map((tg) => ({
+    id: tg.id,
+    category: CATEGORY_LABELS[tg.attributes.name] || tg.attributes.name,
+  }));
+
+  // For each tag group, list its tags (id + display name + category).
+  const tagLists = await Promise.all(
+    tagGroups.map(async (tg) => {
+      const json = await pcoFetch(
+        `${PCO_BASE}/tag_groups/${tg.id}/tags?per_page=100`
+      );
+      return (json.data || []).map((t) => ({
+        id: t.id,
+        name: (t.attributes.name || "").trim(),
+        category: tg.category,
+      }));
+    })
+  );
+  const tags = tagLists.flat();
+
+  const byGroup = new Map(); // groupId -> [{ name, category }]
+  await Promise.all(
+    tags.map(async (tag) => {
+      let url = `${PCO_BASE}/tags/${tag.id}/groups?per_page=100`;
+      while (url) {
+        const json = await pcoFetch(url);
+        for (const g of json.data || []) {
+          if (!validIds.has(g.id)) continue;
+          const list = byGroup.get(g.id) || [];
+          list.push({ name: tag.name, category: tag.category });
+          byGroup.set(g.id, list);
+        }
+        url = json.links?.next || null;
+      }
+    })
+  );
+
+  return byGroup;
+}
+
 // Fetch all listed Connect Groups (paginated) with their locations included.
 export async function fetchConnectGroups(appId, secret) {
   if (!appId || !secret) {
     throw new Error("Missing PCO_APP_ID / PCO_SECRET");
   }
-  const authHeader =
-    "Basic " + Buffer.from(`${appId}:${secret}`).toString("base64");
-
-  const pcoFetch = async (url) => {
-    const res = await fetch(url, { headers: { Authorization: authHeader } });
-    if (!res.ok) throw new Error(`PCO ${res.status}: ${await res.text()}`);
-    return res.json();
-  };
+  const pcoFetch = makePcoFetch(appId, secret);
 
   const groups = [];
   const locations = new Map();
@@ -70,11 +130,22 @@ export async function fetchConnectGroups(appId, secret) {
         lng: loc.longitude,
         locationName: loc.name || "",
         signupUrl: a.public_church_center_web_url,
+        tags: [],
       });
     }
 
     if (!json.links?.next) break;
     offset += 100;
+  }
+
+  // Attach tags (campus, demographics, attributes, etc.) to each group.
+  try {
+    const validIds = new Set(groups.map((g) => g.id));
+    const tagsByGroup = await fetchTagsByGroup(pcoFetch, validIds);
+    for (const g of groups) g.tags = tagsByGroup.get(g.id) || [];
+  } catch (err) {
+    // Tags are an enhancement — if the tag fetch fails, still return groups.
+    console.error("Tag fetch failed:", err);
   }
 
   return groups;

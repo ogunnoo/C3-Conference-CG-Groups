@@ -32,6 +32,17 @@ const DAY_FULL = {
   Sat: "Saturday",
 };
 
+// Preferred display order for tag categories; anything else falls to the end.
+const CATEGORY_ORDER = [
+  "Campus",
+  "Demographics",
+  "Type",
+  "Attributes",
+  "Frequency",
+  "Season",
+];
+const tagKey = (category, name) => `${category}|${name}`;
+
 // Haversine distance in kilometres.
 function distanceKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
@@ -131,6 +142,7 @@ export default function App() {
   const [status, setStatus] = useState("loading");
   const [query, setQuery] = useState("");
   const [activeDays, setActiveDays] = useState(() => new Set());
+  const [activeTags, setActiveTags] = useState(() => new Set());
   const [selected, setSelected] = useState(null);
 
   const [address, setAddress] = useState("");
@@ -153,11 +165,54 @@ export default function App() {
       .catch(() => setStatus("error"));
   }, []);
 
-  // Text + day filtering.
+  // Build the tag filter taxonomy (category -> tag names) from loaded groups.
+  const taxonomy = useMemo(() => {
+    const map = new Map();
+    for (const g of groups) {
+      for (const t of g.tags || []) {
+        if (!map.has(t.category)) map.set(t.category, new Set());
+        map.get(t.category).add(t.name);
+      }
+    }
+    const rank = (c) => {
+      const i = CATEGORY_ORDER.indexOf(c);
+      return i < 0 ? CATEGORY_ORDER.length : i;
+    };
+    return [...map.keys()]
+      .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+      .map((category) => ({
+        category,
+        tags: [...map.get(category)].sort((a, b) => a.localeCompare(b)),
+      }));
+  }, [groups]);
+
+  // Active tags grouped by category, for AND-across / OR-within matching.
+  const activeByCat = useMemo(() => {
+    const m = new Map();
+    for (const k of activeTags) {
+      const i = k.indexOf("|");
+      const cat = k.slice(0, i);
+      const name = k.slice(i + 1);
+      if (!m.has(cat)) m.set(cat, new Set());
+      m.get(cat).add(name);
+    }
+    return m;
+  }, [activeTags]);
+
+  // Text + day + tag filtering. A group must match within every active
+  // category (OR within a category, AND across categories).
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return groups.filter((g) => {
       if (activeDays.size && !activeDays.has(g.day)) return false;
+      if (activeByCat.size) {
+        for (const [cat, names] of activeByCat) {
+          const ok = (g.tags || []).some(
+            (t) => t.category === cat && names.has(t.name)
+          );
+          if (!ok) return false;
+        }
+      }
       if (!q) return true;
       return (
         g.name.toLowerCase().includes(q) ||
@@ -165,7 +220,7 @@ export default function App() {
         (g.locationName || "").toLowerCase().includes(q)
       );
     });
-  }, [groups, query, activeDays]);
+  }, [groups, query, activeDays, activeByCat]);
 
   // Attach distance + sort by proximity when an origin is set.
   const ordered = useMemo(() => {
@@ -200,6 +255,14 @@ export default function App() {
     setActiveDays((prev) => {
       const next = new Set(prev);
       next.has(full) ? next.delete(full) : next.add(full);
+      return next;
+    });
+  }
+
+  function toggleTag(key) {
+    setActiveTags((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   }
@@ -336,6 +399,39 @@ export default function App() {
             </button>
           )}
         </div>
+
+        {taxonomy.length > 0 && (
+          <div className="cg-filters">
+            {taxonomy.map(({ category, tags }) => (
+              <div className="cg-filter-cat" key={category}>
+                <div className="cg-filter-label">{category}</div>
+                <div className="cg-chips compact">
+                  {tags.map((name) => {
+                    const key = tagKey(category, name);
+                    const on = activeTags.has(key);
+                    return (
+                      <button
+                        key={key}
+                        className={`cg-chip ${on ? "on" : ""}`}
+                        onClick={() => toggleTag(key)}
+                      >
+                        {name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            {activeTags.size > 0 && (
+              <button
+                className="cg-filter-clear"
+                onClick={() => setActiveTags(new Set())}
+              >
+                Clear {activeTags.size} tag{activeTags.size > 1 ? "s" : ""}
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="cg-count">
           {status === "ready"
