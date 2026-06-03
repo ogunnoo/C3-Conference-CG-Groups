@@ -149,6 +149,7 @@ export default function App() {
   const [origin, setOrigin] = useState(null); // { lat, lng, label }
   const [geoStatus, setGeoStatus] = useState("idle"); // idle | loading | error
   const [sheetOpen, setSheetOpen] = useState(false); // mobile bottom-sheet state
+  const [filtersOpen, setFiltersOpen] = useState(false); // tag-filter disclosure
 
   const markerRefs = useRef({});
 
@@ -402,33 +403,52 @@ export default function App() {
 
         {taxonomy.length > 0 && (
           <div className="cg-filters">
-            {taxonomy.map(({ category, tags }) => (
-              <div className="cg-filter-cat" key={category}>
-                <div className="cg-filter-label">{category}</div>
-                <div className="cg-chips compact">
-                  {tags.map((name) => {
-                    const key = tagKey(category, name);
-                    const on = activeTags.has(key);
-                    return (
-                      <button
-                        key={key}
-                        className={`cg-chip ${on ? "on" : ""}`}
-                        onClick={() => toggleTag(key)}
-                      >
-                        {name}
-                      </button>
-                    );
-                  })}
-                </div>
+            <button
+              type="button"
+              className="cg-filters-toggle"
+              onClick={() => setFiltersOpen((o) => !o)}
+              aria-expanded={filtersOpen}
+            >
+              <span>
+                Filters
+                {activeTags.size > 0 && (
+                  <span className="cg-filters-badge">{activeTags.size}</span>
+                )}
+              </span>
+              <span className={`cg-caret ${filtersOpen ? "open" : ""}`}>▾</span>
+            </button>
+
+            {filtersOpen && (
+              <div className="cg-filters-body">
+                {taxonomy.map(({ category, tags }) => (
+                  <div className="cg-filter-cat" key={category}>
+                    <div className="cg-filter-label">{category}</div>
+                    <div className="cg-chips compact">
+                      {tags.map((name) => {
+                        const key = tagKey(category, name);
+                        const on = activeTags.has(key);
+                        return (
+                          <button
+                            key={key}
+                            className={`cg-chip ${on ? "on" : ""}`}
+                            onClick={() => toggleTag(key)}
+                          >
+                            {name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                {activeTags.size > 0 && (
+                  <button
+                    className="cg-filter-clear"
+                    onClick={() => setActiveTags(new Set())}
+                  >
+                    Clear {activeTags.size} tag{activeTags.size > 1 ? "s" : ""}
+                  </button>
+                )}
               </div>
-            ))}
-            {activeTags.size > 0 && (
-              <button
-                className="cg-filter-clear"
-                onClick={() => setActiveTags(new Set())}
-              >
-                Clear {activeTags.size} tag{activeTags.size > 1 ? "s" : ""}
-              </button>
             )}
           </div>
         )}
